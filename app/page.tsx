@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
+import Link from 'next/link'
 
 // Tipos de línea de consola
 type ConsoleLineType = 'log' | 'error' | 'warn' | 'info'
@@ -527,6 +528,21 @@ console.log('10 + 5 =', suma);`)
       <div className="header">
         <h1>🚀 JavaScript Playground</h1>
         <p>Escribe, ejecuta y aprende JavaScript en tiempo real</p>
+        <Link href="/examen" style={{
+          display: 'inline-block',
+          marginTop: '20px',
+          background: 'rgba(255,255,255,0.2)',
+          padding: '12px 30px',
+          borderRadius: '8px',
+          color: 'white',
+          textDecoration: 'none',
+          fontWeight: 'bold',
+          fontSize: '1.1em',
+          transition: 'all 0.3s',
+          border: '2px solid white'
+        }}>
+          📝 Ir al Modo Examen →
+        </Link>
       </div>
 
       <div className="main-content">
