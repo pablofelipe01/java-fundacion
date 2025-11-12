@@ -1,6 +1,6 @@
 # Resumen de Cambios y Correcciones
 
-## ✅ Problema Resuelto
+## ✅ Problema Resuelto resolbiendo problemas para subir ulyima version
 
 ### Error Original:
 ```
