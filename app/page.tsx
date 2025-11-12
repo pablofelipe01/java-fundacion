@@ -528,21 +528,36 @@ console.log('10 + 5 =', suma);`)
       <div className="header">
         <h1>🚀 JavaScript Playground</h1>
         <p>Escribe, ejecuta y aprende JavaScript en tiempo real</p>
-        <Link href="/examen" style={{
-          display: 'inline-block',
-          marginTop: '20px',
-          background: 'rgba(255,255,255,0.2)',
-          padding: '12px 30px',
-          borderRadius: '8px',
-          color: 'white',
-          textDecoration: 'none',
-          fontWeight: 'bold',
-          fontSize: '1.1em',
-          transition: 'all 0.3s',
-          border: '2px solid white'
-        }}>
-          📝 Ir al Modo Examen →
-        </Link>
+        <div style={{ display: 'flex', gap: '15px', marginTop: '20px', justifyContent: 'center', flexWrap: 'wrap' }}>
+          <Link href="/examen" style={{
+            display: 'inline-block',
+            background: 'rgba(255,255,255,0.2)',
+            padding: '12px 30px',
+            borderRadius: '8px',
+            color: 'white',
+            textDecoration: 'none',
+            fontWeight: 'bold',
+            fontSize: '1.1em',
+            transition: 'all 0.3s',
+            border: '2px solid white'
+          }}>
+            📝 Ir al Modo Examen →
+          </Link>
+          <Link href="/test-airtable" style={{
+            display: 'inline-block',
+            background: 'rgba(255,255,255,0.15)',
+            padding: '12px 30px',
+            borderRadius: '8px',
+            color: 'white',
+            textDecoration: 'none',
+            fontWeight: 'bold',
+            fontSize: '1.1em',
+            transition: 'all 0.3s',
+            border: '2px solid rgba(255,255,255,0.5)'
+          }}>
+            🧪 Probar Airtable
+          </Link>
+        </div>
       </div>
 
       <div className="main-content">

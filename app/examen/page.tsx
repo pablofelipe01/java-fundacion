@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
 
 interface Exercise {
@@ -150,6 +150,13 @@ const exercises: Exercise[] = [
 ]
 
 export default function ExamenPage() {
+  // Estados del examen
+  const [studentName, setStudentName] = useState('')
+  const [examStarted, setExamStarted] = useState(false)
+  const [examFinished, setExamFinished] = useState(false)
+  const [timeLeft, setTimeLeft] = useState(30 * 60) // 30 minutos en segundos
+
+  // Estados de los ejercicios
   const [currentExercise, setCurrentExercise] = useState(0)
   const [code, setCode] = useState('')
   const [consoleOutput, setConsoleOutput] = useState<string[]>([])
@@ -161,6 +168,104 @@ export default function ExamenPage() {
 
   const exercise = exercises[currentExercise]
   const progress = ((currentExercise + 1) / exercises.length) * 100
+
+  // Timer del examen
+  useEffect(() => {
+    if (examStarted && !examFinished && timeLeft > 0) {
+      const timer = setInterval(() => {
+        setTimeLeft((prev) => {
+          if (prev <= 1) {
+            clearInterval(timer)
+            finishExam()
+            return 0
+          }
+          return prev - 1
+        })
+      }, 1000)
+
+      return () => clearInterval(timer)
+    }
+  }, [examStarted, examFinished, timeLeft])
+
+  // Formatear tiempo
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60)
+    const secs = seconds % 60
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+  }
+
+  // Enviar resultados a Airtable
+  const sendToAirtable = async () => {
+    try {
+      console.log('Enviando datos a Airtable...', {
+        nombre: studentName,
+        puntaje: score,
+        total: exercises.length,
+        intentos: attempts
+      })
+
+      const response = await fetch('/api/submit-exam', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          nombre: studentName,
+          puntaje: score,
+          total: exercises.length,
+          intentos: attempts,
+          fecha: new Date().toISOString().split('T')[0] // Solo la fecha YYYY-MM-DD
+        })
+      })
+
+      const data = await response.json()
+      console.log('Respuesta de la API:', data)
+
+      if (!response.ok) {
+        console.error('Error al enviar a Airtable:', data)
+        alert('Hubo un error al guardar los resultados. Por favor contacta al profesor.')
+      } else {
+        console.log('✅ Datos guardados exitosamente en Airtable')
+      }
+    } catch (error) {
+      console.error('Error al enviar:', error)
+      alert('Error de conexión. Por favor verifica tu internet.')
+    }
+  }
+
+  // Finalizar examen
+  const finishExam = async () => {
+    setExamFinished(true)
+    await sendToAirtable()
+    const porcentaje = Math.round((score / exercises.length) * 100)
+    setFeedback({
+      type: 'info',
+      message: `🎓 ¡EXAMEN TERMINADO!\n\n📊 Tu puntuación final: ${score}/${exercises.length} (${porcentaje}%)\n✅ Los resultados han sido enviados exitosamente.\n\n¡Gracias por participar!`
+    })
+  }
+
+  // Iniciar examen
+  const startExam = () => {
+    if (studentName.trim().length < 2) {
+      alert('Por favor, ingresa tu nombre completo')
+      return
+    }
+    setExamStarted(true)
+  }
+
+  // Bloquear copiar/pegar
+  const handlePaste = (e: React.ClipboardEvent) => {
+    e.preventDefault()
+    alert('❌ No puedes pegar código en el examen. Debes escribirlo tú mismo.')
+  }
+
+  const handleCopy = (e: React.ClipboardEvent) => {
+    e.preventDefault()
+  }
+
+  const handleCut = (e: React.ClipboardEvent) => {
+    e.preventDefault()
+  }
 
   const executeCode = () => {
     setConsoleOutput([])
@@ -190,6 +295,8 @@ export default function ExamenPage() {
   }
 
   const checkAnswer = () => {
+    if (examFinished) return
+
     setAttempts(prev => prev + 1)
     const output = executeCode()
 
@@ -201,38 +308,24 @@ export default function ExamenPage() {
     const isCorrect = exercise.validateOutput(output)
 
     if (isCorrect) {
-      setFeedback({ type: 'success', message: '🎉 ¡Correcto! Excelente trabajo.' })
+      setFeedback({ type: 'success', message: '🎉 ¡Correcto! Presiona "Siguiente" para continuar.' })
       setScore(prev => prev + 1)
-
-      setTimeout(() => {
-        if (currentExercise < exercises.length - 1) {
-          setCurrentExercise(prev => prev + 1)
-          setCode('')
-          setConsoleOutput([])
-          setFeedback({ type: '', message: '' })
-          setShowHint(false)
-        } else {
-          setFeedback({ type: 'success', message: `🏆 ¡Felicidades! Completaste todos los ejercicios. Puntuación: ${score + 1}/${exercises.length}` })
-        }
-      }, 2000)
     } else {
       setFeedback({ type: 'error', message: '❌ No es correcto. Lee bien la pregunta e intenta de nuevo.' })
     }
   }
 
-  const skipExercise = () => {
+  const nextExercise = () => {
     if (currentExercise < exercises.length - 1) {
       setCurrentExercise(prev => prev + 1)
       setCode('')
       setConsoleOutput([])
       setFeedback({ type: '', message: '' })
       setShowHint(false)
+    } else {
+      // Terminar examen al completar todos los ejercicios
+      finishExam()
     }
-  }
-
-  const showSolution = () => {
-    setCode(exercise.solution)
-    setFeedback({ type: 'info', message: '💡 Esta es la solución. Estúdiala y presiona "Verificar" para continuar.' })
   }
 
   const getLevelColor = (level: string) => {
@@ -246,18 +339,97 @@ export default function ExamenPage() {
     }
   }
 
+  // Pantalla inicial para ingresar nombre
+  if (!examStarted) {
+    return (
+      <div style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+        <div style={{ maxWidth: '600px', width: '100%', background: 'white', borderRadius: '20px', padding: '50px', boxShadow: '0 15px 50px rgba(0,0,0,0.3)' }}>
+          <div style={{ textAlign: 'center', marginBottom: '40px' }}>
+            <h1 style={{ fontSize: '2.5em', marginBottom: '15px', color: '#667eea' }}>📝 Examen de JavaScript</h1>
+            <p style={{ fontSize: '1.2em', color: '#666' }}>Bienvenido al examen de programación</p>
+          </div>
+
+          <div style={{ background: '#f8f9fa', padding: '25px', borderRadius: '12px', marginBottom: '30px' }}>
+            <h3 style={{ color: '#333', marginBottom: '15px' }}>⚠️ Instrucciones Importantes:</h3>
+            <ul style={{ lineHeight: '2', color: '#666', marginLeft: '20px' }}>
+              <li><strong>Duración:</strong> 30 minutos</li>
+              <li><strong>No puedes regresar</strong> a preguntas anteriores</li>
+              <li><strong>Puedes usar pistas</strong> cuando las necesites</li>
+              <li><strong>No puedes copiar/pegar</strong> código</li>
+              <li>Al terminar el tiempo, se enviarán automáticamente tus resultados</li>
+            </ul>
+          </div>
+
+          <div style={{ marginBottom: '30px' }}>
+            <label style={{ display: 'block', fontSize: '1.1em', fontWeight: 'bold', marginBottom: '10px', color: '#333' }}>
+              Ingresa tu nombre completo:
+            </label>
+            <input
+              type="text"
+              value={studentName}
+              onChange={(e) => setStudentName(e.target.value)}
+              placeholder="Ej: Juan Pérez"
+              style={{
+                width: '100%',
+                padding: '15px',
+                fontSize: '1.1em',
+                border: '2px solid #ddd',
+                borderRadius: '8px',
+                outline: 'none'
+              }}
+              onKeyPress={(e) => e.key === 'Enter' && startExam()}
+            />
+          </div>
+
+          <button
+            onClick={startExam}
+            style={{
+              width: '100%',
+              background: '#4CAF50',
+              color: 'white',
+              border: 'none',
+              padding: '18px',
+              borderRadius: '8px',
+              fontSize: '1.3em',
+              fontWeight: 'bold',
+              cursor: 'pointer',
+              transition: 'all 0.3s'
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.02)'}
+            onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+          >
+            🚀 Comenzar Examen
+          </button>
+
+          <Link href="/" style={{ display: 'block', textAlign: 'center', marginTop: '20px', color: '#667eea', textDecoration: 'none', fontWeight: 'bold' }}>
+            ← Volver al Playground
+          </Link>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', padding: '20px' }}>
       <div style={{ maxWidth: '1200px', margin: '0 auto', background: 'white', borderRadius: '20px', overflow: 'hidden', boxShadow: '0 15px 50px rgba(0,0,0,0.3)' }}>
 
         {/* Header */}
         <div style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: 'white', padding: '30px', position: 'relative' }}>
-          <Link href="/" style={{ position: 'absolute', top: '20px', left: '20px', background: 'rgba(255,255,255,0.2)', padding: '10px 20px', borderRadius: '8px', color: 'white', textDecoration: 'none', fontWeight: 'bold' }}>
-            ← Volver al Playground
-          </Link>
-          <div style={{ textAlign: 'center', marginTop: '30px' }}>
-            <h1 style={{ fontSize: '2.5em', marginBottom: '10px' }}>📝 Modo Examen</h1>
-            <p style={{ fontSize: '1.2em' }}>Resuelve los ejercicios de JavaScript paso a paso</p>
+          <div style={{ textAlign: 'center' }}>
+            <h1 style={{ fontSize: '2.5em', marginBottom: '10px' }}>📝 Examen de JavaScript</h1>
+            <p style={{ fontSize: '1.2em' }}>Estudiante: <strong>{studentName}</strong></p>
+            <div style={{
+              display: 'inline-block',
+              background: timeLeft < 300 ? '#f44336' : 'rgba(255,255,255,0.2)',
+              padding: '12px 30px',
+              borderRadius: '10px',
+              fontSize: '1.5em',
+              fontWeight: 'bold',
+              marginTop: '15px',
+              animation: timeLeft < 60 ? 'pulse 1s infinite' : 'none'
+            }}>
+              ⏱️ Tiempo: {formatTime(timeLeft)}
+            </div>
           </div>
         </div>
 
@@ -302,15 +474,19 @@ export default function ExamenPage() {
 
           {/* Code Editor */}
           <div style={{ background: '#1e1e1e', padding: '20px', borderRadius: '12px', marginBottom: '20px' }}>
-            <div style={{ color: '#61afef', marginBottom: '10px', fontWeight: 'bold' }}>✍️ Escribe tu código aquí:</div>
+            <div style={{ color: '#61afef', marginBottom: '10px', fontWeight: 'bold' }}>✍️ Escribe tu código aquí (No puedes copiar/pegar):</div>
             <textarea
               ref={textareaRef}
               value={code}
               onChange={(e) => setCode(e.target.value)}
+              onPaste={handlePaste}
+              onCopy={handleCopy}
+              onCut={handleCut}
+              disabled={examFinished}
               style={{
                 width: '100%',
                 minHeight: '200px',
-                background: '#2d3748',
+                background: examFinished ? '#444' : '#2d3748',
                 color: '#e8e8e8',
                 border: 'none',
                 padding: '20px',
@@ -319,7 +495,8 @@ export default function ExamenPage() {
                 lineHeight: '1.6',
                 borderRadius: '8px',
                 outline: 'none',
-                resize: 'vertical'
+                resize: 'vertical',
+                cursor: examFinished ? 'not-allowed' : 'text'
               }}
               placeholder="// Escribe tu solución aquí..."
             />
@@ -347,115 +524,134 @@ export default function ExamenPage() {
           {/* Feedback */}
           {feedback.message && (
             <div style={{
-              padding: '20px',
+              padding: examFinished ? '30px' : '20px',
               borderRadius: '12px',
               marginBottom: '20px',
               background: feedback.type === 'success' ? '#e8f5e9' : feedback.type === 'error' ? '#ffebee' : '#e3f2fd',
               borderLeft: `5px solid ${feedback.type === 'success' ? '#4CAF50' : feedback.type === 'error' ? '#f44336' : '#2196F3'}`,
-              fontSize: '1.1em',
-              fontWeight: 'bold'
+              fontSize: examFinished ? '1.3em' : '1.1em',
+              fontWeight: 'bold',
+              textAlign: examFinished ? 'center' : 'left',
+              whiteSpace: 'pre-line'
             }}>
               {feedback.message}
             </div>
           )}
 
           {/* Action Buttons */}
-          <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap' }}>
-            <button
-              onClick={checkAnswer}
-              style={{
-                flex: '1',
-                background: '#4CAF50',
-                color: 'white',
-                border: 'none',
-                padding: '15px 30px',
-                borderRadius: '8px',
-                fontSize: '18px',
-                fontWeight: 'bold',
-                cursor: 'pointer',
-                transition: 'all 0.3s'
-              }}
-              onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
-              onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
-            >
-              ✅ Verificar Respuesta
-            </button>
+          {!examFinished ? (
+            <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap' }}>
+              <button
+                onClick={checkAnswer}
+                style={{
+                  flex: '1',
+                  background: '#4CAF50',
+                  color: 'white',
+                  border: 'none',
+                  padding: '15px 30px',
+                  borderRadius: '8px',
+                  fontSize: '18px',
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                  transition: 'all 0.3s'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
+                onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+              >
+                ✅ Verificar Respuesta
+              </button>
 
-            <button
-              onClick={executeCode}
-              style={{
-                background: '#2196F3',
-                color: 'white',
-                border: 'none',
-                padding: '15px 30px',
-                borderRadius: '8px',
-                fontSize: '16px',
-                fontWeight: 'bold',
-                cursor: 'pointer'
-              }}
-            >
-              ▶️ Ejecutar
-            </button>
+              <button
+                onClick={executeCode}
+                style={{
+                  background: '#2196F3',
+                  color: 'white',
+                  border: 'none',
+                  padding: '15px 30px',
+                  borderRadius: '8px',
+                  fontSize: '16px',
+                  fontWeight: 'bold',
+                  cursor: 'pointer'
+                }}
+              >
+                ▶️ Ejecutar
+              </button>
 
-            <button
-              onClick={() => setShowHint(!showHint)}
-              style={{
-                background: '#FF9800',
-                color: 'white',
-                border: 'none',
-                padding: '15px 30px',
-                borderRadius: '8px',
-                fontSize: '16px',
-                fontWeight: 'bold',
-                cursor: 'pointer'
-              }}
-            >
-              💡 {showHint ? 'Ocultar' : 'Ver'} Pista
-            </button>
+              <button
+                onClick={() => setShowHint(!showHint)}
+                style={{
+                  background: '#FF9800',
+                  color: 'white',
+                  border: 'none',
+                  padding: '15px 30px',
+                  borderRadius: '8px',
+                  fontSize: '16px',
+                  fontWeight: 'bold',
+                  cursor: 'pointer'
+                }}
+              >
+                💡 {showHint ? 'Ocultar' : 'Ver'} Pista
+              </button>
 
-            <button
-              onClick={showSolution}
-              style={{
-                background: '#9C27B0',
-                color: 'white',
-                border: 'none',
-                padding: '15px 30px',
-                borderRadius: '8px',
-                fontSize: '16px',
-                fontWeight: 'bold',
-                cursor: 'pointer'
-              }}
-            >
-              👁️ Ver Solución
-            </button>
-
-            <button
-              onClick={skipExercise}
-              style={{
-                background: '#607D8B',
-                color: 'white',
-                border: 'none',
-                padding: '15px 30px',
-                borderRadius: '8px',
-                fontSize: '16px',
-                fontWeight: 'bold',
-                cursor: 'pointer'
-              }}
-              disabled={currentExercise >= exercises.length - 1}
-            >
-              ⏭️ Saltar
-            </button>
-          </div>
+              <button
+                onClick={nextExercise}
+                style={{
+                  background: '#9C27B0',
+                  color: 'white',
+                  border: 'none',
+                  padding: '15px 30px',
+                  borderRadius: '8px',
+                  fontSize: '16px',
+                  fontWeight: 'bold',
+                  cursor: 'pointer'
+                }}
+              >
+                ⏭️ Siguiente
+              </button>
+            </div>
+          ) : (
+            <div style={{ textAlign: 'center' }}>
+              <Link
+                href="/"
+                style={{
+                  display: 'inline-block',
+                  background: '#667eea',
+                  color: 'white',
+                  border: 'none',
+                  padding: '20px 50px',
+                  borderRadius: '12px',
+                  fontSize: '1.3em',
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                  textDecoration: 'none',
+                  transition: 'all 0.3s',
+                  boxShadow: '0 4px 15px rgba(102, 126, 234, 0.4)'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = 'scale(1.05)'
+                  e.currentTarget.style.boxShadow = '0 6px 20px rgba(102, 126, 234, 0.6)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)'
+                  e.currentTarget.style.boxShadow = '0 4px 15px rgba(102, 126, 234, 0.4)'
+                }}
+              >
+                🏠 Volver al Inicio
+              </Link>
+            </div>
+          )}
         </div>
 
         {/* Tips */}
         <div style={{ background: '#fff3cd', padding: '20px', margin: '20px', borderRadius: '10px', borderLeft: '5px solid #ffc107' }}>
-          <h3 style={{ color: '#f57c00', marginBottom: '10px' }}>💭 Tips:</h3>
+          <h3 style={{ color: '#f57c00', marginBottom: '10px' }}>💭 Reglas del Examen:</h3>
           <ul style={{ marginLeft: '20px', lineHeight: '2', color: '#666' }}>
-            <li>Lee cuidadosamente cada pregunta</li>
-            <li>Usa "Ejecutar" para probar tu código antes de verificar</li>
-            <li>Si te atascas, usa la pista</li>
-            <li>Puedes ver la solución para aprender</li>
+            <li>⏱️ Tienes 30 minutos para completar todos los ejercicios</li>
+            <li>🚫 No puedes copiar/pegar código - debes escribirlo</li>
+            <li>➡️ No puedes regresar a ejercicios anteriores</li>
+            <li>💡 Puedes usar las pistas cuando las necesites</li>
+            <li>▶️ Usa "Ejecutar" para probar tu código antes de verificar</li>
+            <li>⏭️ Usa "Siguiente" para avanzar al siguiente ejercicio</li>
           </ul>
         </div>
 
